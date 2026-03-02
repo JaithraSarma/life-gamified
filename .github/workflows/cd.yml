@@ -68,7 +68,7 @@ jobs:
     name: Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     environment: production
 
     steps:
@@ -85,8 +85,10 @@ jobs:
       - name: Update image tags in manifests
         run: |
           cd k8s
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" backend-deployment.yaml
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" frontend-deployment.yaml
+          sed -i "s|life-gamified-backend:latest|${{ env.BACKEND_IMAGE }}:${{ github.sha }}|g" backend-deployment.yaml
+          sed -i "s|life-gamified-frontend:latest|${{ env.FRONTEND_IMAGE }}:${{ github.sha }}|g" frontend-deployment.yaml
+          sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" backend-deployment.yaml
+          sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" frontend-deployment.yaml
 
       - name: Apply Kubernetes manifests
         run: |

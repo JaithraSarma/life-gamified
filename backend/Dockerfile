@@ -9,6 +9,7 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 RUN apk add --no-cache curl
+RUN mkdir -p /data && chown node:node /data
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist

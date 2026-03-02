@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/OWNER/life-gamified/frontend:IMAGE_TAG
+          image: life-gamified-frontend:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 80
           resources:
