@@ -1,0 +1,56 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "life-gamified",
+    "title": "Life Gamified — Application Dashboard",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Backend Health",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "up{job=\"life-gamified-backend\"}",
+            "legendFormat": "Backend Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+            ]
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Response Time (Health Endpoint)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "expr": "scrape_duration_seconds{job=\"life-gamified-backend\"}",
+            "legendFormat": "Response Time"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Scrape Samples",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "expr": "scrape_samples_scraped{job=\"life-gamified-backend\"}",
+            "legendFormat": "Samples"
+          }
+        ]
+      }
+    ],
+    "time": { "from": "now-1h", "to": "now" },
+    "refresh": "30s",
+    "version": 1
+  }
+}
