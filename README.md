@@ -1407,96 +1407,319 @@ This prevents accidental deployments. For local practice, the deploy step is eff
 
 ## CI/CD — Azure DevOps
 
-The project includes a **parallel Azure DevOps pipeline** alongside GitHub Actions, demonstrating multi-platform CI/CD expertise.
+The project includes a **parallel Azure DevOps Pipelines** setup alongside GitHub Actions, demonstrating **multi-platform CI/CD** — the same codebase triggers builds on both platforms simultaneously. This mirrors real-world enterprise setups where teams use Azure DevOps for its deep Azure integration and approval gates, while keeping GitHub Actions for open-source contributor workflows.
 
-> **Note**: The CI pipeline is **completely free** (no Azure subscription needed — only an Azure DevOps account at [dev.azure.com](https://dev.azure.com)). The CD pipeline requires an Azure subscription (free trial $200 credit works) for Azure Container Registry.
+### Why Azure DevOps Alongside GitHub Actions?
+
+| Reason | Detail |
+|--------|--------|
+| **Enterprise practice** | Most Azure-centric orgs use Azure Pipelines; knowing both makes you versatile |
+| **Stage-based pipelines** | Azure Pipelines uses `stages → jobs → steps` (vs GitHub's `jobs → steps`) — different mental model |
+| **Reusable templates** | Azure supports `template` YAML includes; GitHub equivalent (reusable workflows) works differently |
+| **Environment approvals** | Azure `environment` resources have built-in manual approval gates (no third-party Actions needed) |
+| **ACR integration** | Native `Docker@2` task connects to Azure Container Registry with zero scripting |
+| **Resume signal** | Shows you can operate in both ecosystems, not locked to one vendor |
 
 ### Pipeline Files
 
 ```
 azure-pipelines/
-├── ci-pipeline.yml              # CI: lint → test → build → Docker build → Trivy scan
-├── cd-pipeline.yml              # CD: build & push to ACR → deploy to K8s (staged)
+├── ci-pipeline.yml              # CI: lint → test → build → Docker build → Trivy scan (3 stages)
+├── cd-pipeline.yml              # CD: build & push to ACR → deploy to K8s (2 staged)
 └── templates/
-    ├── install-node.yml         # Reusable: Node.js setup
-    └── docker-build-push.yml   # Reusable: Docker build + ACR push
+    ├── install-node.yml         # Reusable step template: Node.js setup
+    └── docker-build-push.yml    # Reusable step template: Docker build + ACR push
 ```
 
-### CI Pipeline (`azure-pipelines/ci-pipeline.yml`)
+---
+
+### CI Pipeline — Deep Dive (`azure-pipelines/ci-pipeline.yml`)
 
 **Triggers**: Push to `main`/`develop`, pull requests to `main`.
 
+**How it maps to GitHub Actions**:
+- GitHub's `on: push/pull_request` → Azure's `trigger:` / `pr:` blocks
+- GitHub's `runs-on: ubuntu-latest` → Azure's `pool: vmImage: "ubuntu-latest"`
+- GitHub's `jobs:` → Azure's `stages: → jobs: → steps:`
+- GitHub's `uses: actions/setup-node@v4` → Azure's `task: NodeTool@0`
+
 ```
 ┌──────────────────────────────────────┐
-│  Stage: BuildAndTest                 │
-│  ├── Job: Backend                    │
-│  │   ├── npm ci                      │
-│  │   ├── npm run lint (non-blocking) │
-│  │   ├── npm test (8 tests)          │
-│  │   └── npm run build               │
-│  └── Job: Frontend                   │
-│      ├── npm ci                      │
-│      ├── npm run lint (non-blocking) │
-│      └── npm run build               │
+│  Stage 1: BuildAndTest               │
+│  ┌────────────────────────────────┐  │
+│  │ Job: Backend (parallel)        │  │
+│  │  ├── NodeTool@0 (Node 20)     │  │
+│  │  ├── npm ci                    │  │
+│  │  ├── npm run lint || true      │  │
+│  │  ├── npm test (8 tests)        │  │
+│  │  ├── npm run build             │  │
+│  │  └── PublishTestResults@2      │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
+│  │ Job: Frontend (parallel)       │  │
+│  │  ├── NodeTool@0 (Node 20)     │  │
+│  │  ├── npm ci                    │  │
+│  │  ├── npm run lint || true      │  │
+│  │  └── npm run build             │  │
+│  └────────────────────────────────┘  │
 └──────────────┬───────────────────────┘
-               │
+               │ dependsOn: BuildAndTest
 ┌──────────────▼───────────────────────┐
-│  Stage: DockerBuild                  │
-│  ├── docker build backend            │
-│  └── docker build frontend           │
+│  Stage 2: DockerBuild                │
+│  ├── Docker@2 build backend          │
+│  │   tags: $(Build.BuildId), latest  │
+│  └── Docker@2 build frontend         │
+│      tags: $(Build.BuildId), latest  │
 └──────────────────────────────────────┘
 
 ┌──────────────────────────────────────┐
-│  Stage: SecurityScan (parallel)      │
-│  ├── Install Trivy                   │
-│  ├── Scan backend (HIGH,CRITICAL)    │
-│  └── Scan frontend (HIGH,CRITICAL)   │
+│  Stage 3: SecurityScan (parallel     │
+│           with DockerBuild)          │
+│  ├── apt-get install trivy           │
+│  ├── trivy fs ./backend              │
+│  └── trivy fs ./frontend             │
+│  (HIGH + CRITICAL severity)          │
 └──────────────────────────────────────┘
 ```
 
-### CD Pipeline (`azure-pipelines/cd-pipeline.yml`)
+#### Key YAML Concepts Explained
 
-**Triggers**: Push to `main`, version tags (`v*`).
+**Stages**: Top-level grouping. Each stage runs on a **fresh VM**. Stages can depend on each other (`dependsOn`) or run in parallel.
+
+```yaml
+stages:
+  - stage: BuildAndTest         # Stage 1 — both jobs run in parallel
+  - stage: DockerBuild          # Stage 2 — waits for Stage 1
+    dependsOn: BuildAndTest
+  - stage: SecurityScan         # Stage 3 — also waits for Stage 1 (parallel with Stage 2)
+    dependsOn: BuildAndTest
+```
+
+**Jobs within a stage**: Backend and Frontend jobs run **in parallel** within Stage 1 — Azure automatically provisions separate agents for each.
+
+**`task: NodeTool@0`**: Azure's built-in task for installing Node.js (equivalent to `actions/setup-node@v4`). The `@0` is the task major version.
+
+**`task: Docker@2`**: Built-in Docker task. `command: build` builds locally; `command: buildAndPush` builds and pushes to a registry.
+
+**`task: PublishTestResults@2`**: Azure-exclusive feature — publishes test XML to the **Tests** tab in the pipeline run UI. Shows pass/fail counts, duration, and trends across builds.
+
+**`$(Build.BuildId)`**: Azure predefined variable — auto-incrementing integer (1, 2, 3...) unique per pipeline. Used as Docker image tag for traceability.
+
+---
+
+### CD Pipeline — Deep Dive (`azure-pipelines/cd-pipeline.yml`)
+
+**Triggers**: Push to `main`, version tags (`v*`). PRs are explicitly excluded (`pr: none`).
+
+**How it maps to GitHub Actions**:
+- GitHub's `docker/login-action@v3` → Azure's `Docker@2` with `command: login`
+- GitHub's `docker/build-push-action@v5` → Azure's `Docker@2` with `command: buildAndPush`
+- GitHub's `azure/setup-kubectl@v3` + `kubectl apply` → Azure's `KubernetesManifest@1`
+- GitHub's `if: github.ref == 'refs/heads/main'` → Azure's `condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')`
+- GitHub's `environment: production` → Azure's `environment: "life-gamified-production"` (with approval gates)
 
 ```
 ┌──────────────────────────────────────┐
-│  Stage: BuildAndPush                 │
-│  ├── Job: PushBackend                │
-│  │   └── Build + push to ACR        │
-│  └── Job: PushFrontend               │
-│      └── Build + push to ACR        │
+│  Stage 1: BuildAndPush               │
+│  ┌────────────────────────────────┐  │
+│  │ Job: PushBackend (parallel)    │  │
+│  │  ├── Docker@2 login → ACR     │  │
+│  │  └── Docker@2 buildAndPush    │  │
+│  │      → lifegamifiedacr.       │  │
+│  │        azurecr.io/life-       │  │
+│  │        gamified/backend       │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
+│  │ Job: PushFrontend (parallel)   │  │
+│  │  ├── Docker@2 login → ACR     │  │
+│  │  └── Docker@2 buildAndPush    │  │
+│  │      → lifegamifiedacr.       │  │
+│  │        azurecr.io/life-       │  │
+│  │        gamified/frontend      │  │
+│  └────────────────────────────────┘  │
 └──────────────┬───────────────────────┘
                │
-               │ condition: main branch only
+               │ condition: refs/heads/main only
                ▼
 ┌──────────────────────────────────────┐
-│  Stage: Deploy                       │
-│  ├── Create namespace                │
-│  ├── sed: replace image tags         │
-│  ├── KubernetesManifest@1 deploy     │
-│  ├── Verify rollout — backend        │
-│  └── Verify rollout — frontend       │
+│  Stage 2: Deploy                     │
+│  (deployment job with environment)   │
+│  ├── checkout: self                  │
+│  ├── KubernetesManifest@1            │
+│  │   → create namespace             │
+│  ├── sed: swap image tags in YAMLs   │
+│  ├── KubernetesManifest@1            │
+│  │   → deploy all manifests          │
+│  ├── Kubernetes@1 rollout status     │
+│  │   → backend (120s timeout)        │
+│  └── Kubernetes@1 rollout status     │
+│      → frontend (120s timeout)       │
 └──────────────────────────────────────┘
 ```
 
-**ACR (Azure Container Registry)**: Images are pushed to `lifegamifiedacr.azurecr.io/life-gamified/backend` and `.../frontend` with build ID tags.
+#### Key YAML Concepts Explained
 
-**Environment approvals**: The deploy stage uses Azure DevOps `environment` resources, enabling manual approval gates before production deploys.
+**Variables block**: Centralized config at the top of the file — change one variable, updates everywhere.
 
-### Dual Pipeline Comparison
+```yaml
+variables:
+  acrServiceConnection: "acr-service-connection"   # Name in Azure DevOps service connections
+  acrLoginServer: "lifegamifiedacr.azurecr.io"     # ACR URL
+  backendImageRepo: "life-gamified/backend"         # Repository path inside ACR
+  imageTag: "$(Build.BuildId)"                      # Auto-incrementing build number
+```
 
-| Feature              | GitHub Actions           | Azure DevOps             |
-|----------------------|--------------------------|--------------------------|
-| Config location      | `.github/workflows/`     | `azure-pipelines/`       |
-| Container registry   | GHCR                     | Azure Container Registry |
-| Trigger syntax       | `on: push/pr`            | `trigger/pr`             |
-| Pipeline language    | GitHub Actions YAML      | Azure Pipelines YAML     |
-| Deploy mechanism     | `kubectl apply`          | `KubernetesManifest@1`   |
-| Deploy guard         | `vars.DEPLOY_ENABLED`    | Environment approvals    |
-| Reusable components  | N/A                      | `templates/` (2 templates) |
-| Free tier            | 2,000 min/month          | 1,800 min/month          |
+**`deployment` job** (vs regular `job`): Special job type that tracks **what was deployed where**. Azure DevOps records deploy history under **Environments** — shows which build was deployed to which environment and when.
 
-> **Full setup guide**: See [docs/AZURE_DEVOPS_SETUP.md](docs/AZURE_DEVOPS_SETUP.md) for step-by-step instructions on creating the Azure DevOps organization, connecting your repo, and configuring service connections.
+**`strategy: runOnce`**: Deploy strategy — runs once and completes. Azure also supports `rolling` (deploy to X% of targets at a time) and `canary` (deploy to a subset, validate, then promote).
+
+**`environment: "life-gamified-production"`**: Links the deploy to an Azure DevOps Environment resource. You can add **manual approval gates** — a human must click "Approve" before the deploy runs. This is the Azure equivalent of GitHub's `vars.DEPLOY_ENABLED` guard.
+
+**`KubernetesManifest@1`**: Azure's first-party K8s task — handles namespace creation, manifest deployment, and image substitution. More structured than raw `kubectl apply`.
+
+**`Kubernetes@1` for rollout verification**: Runs `kubectl rollout status deployment/backend --timeout=120s` — if pods fail to come up within 2 minutes, the pipeline fails with a clear error.
+
+**Service connections** (configured in Azure DevOps UI, referenced in YAML):
+- `acr-service-connection` → authenticates to Azure Container Registry via Azure AD (no passwords in YAML)
+- `k8s-service-connection` → authenticates to K8s cluster via AKS managed identity or kubeconfig
+
+---
+
+### Reusable Templates — Deep Dive
+
+Azure DevOps supports **YAML template includes** — extract common steps into separate files and import them with `- template:`. This avoids copy-pasting the same Node.js or Docker setup across pipelines.
+
+#### `templates/install-node.yml`
+
+```yaml
+# Usage in any pipeline:
+#   - template: templates/install-node.yml
+#     parameters:
+#       nodeVersion: '20.x'
+
+parameters:
+  - name: nodeVersion
+    type: string
+    default: "20.x"
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: ${{ parameters.nodeVersion }}
+```
+
+**What it does**: Installs Node.js on the agent. Called with `- template: templates/install-node.yml` in any pipeline.
+**Why it exists**: Both CI and CD might need Node.js; centralizing avoids version drift between pipelines.
+
+#### `templates/docker-build-push.yml`
+
+```yaml
+# Usage:
+#   - template: templates/docker-build-push.yml
+#     parameters:
+#       serviceName: 'backend'
+#       dockerfilePath: 'backend/Dockerfile'
+#       buildContext: 'backend'
+#       repository: 'life-gamified/backend'
+#       containerRegistry: 'acr-service-connection'
+
+parameters:
+  - name: serviceName        # Display name ("backend" / "frontend")
+  - name: dockerfilePath     # Path to Dockerfile
+  - name: buildContext       # Docker build context directory
+  - name: repository         # ACR repository path
+  - name: containerRegistry  # Service connection name
+  - name: imageTag
+    default: "$(Build.BuildId)"
+
+steps:
+  - task: Docker@2           # Login to ACR
+    inputs:
+      command: login
+      containerRegistry: ${{ parameters.containerRegistry }}
+
+  - task: Docker@2           # Build + push in one step
+    inputs:
+      command: buildAndPush
+      repository: ${{ parameters.repository }}
+      Dockerfile: ${{ parameters.dockerfilePath }}
+      buildContext: ${{ parameters.buildContext }}
+      containerRegistry: ${{ parameters.containerRegistry }}
+      tags: |
+        ${{ parameters.imageTag }}
+        latest
+```
+
+**What it does**: Logs into ACR and builds+pushes a Docker image in a single reusable template.
+**Why it exists**: The CD pipeline pushes both backend and frontend — without this template, the same 15 lines would be duplicated in each job.
+**`${{ parameters.X }}` vs `$(variable)`**: Template parameters use `${{ }}` (compile-time substitution by Azure), while pipeline variables use `$()` (runtime substitution on the agent).
+
+---
+
+### Azure DevOps vs GitHub Actions — Complete Concept Mapping
+
+| Concept | GitHub Actions | Azure DevOps Pipelines |
+|---------|---------------|----------------------|
+| Config file | `.github/workflows/*.yml` | `azure-pipelines/*.yml` |
+| Top-level grouping | `jobs:` (flat) | `stages: → jobs: → steps:` (hierarchical) |
+| Trigger on push | `on: push: branches: [main]` | `trigger: branches: include: [main]` |
+| Trigger on PR | `on: pull_request:` | `pr: branches: include:` |
+| Runner | `runs-on: ubuntu-latest` | `pool: vmImage: "ubuntu-latest"` |
+| Install Node | `uses: actions/setup-node@v4` | `task: NodeTool@0` |
+| Docker build | `uses: docker/build-push-action@v5` | `task: Docker@2` |
+| Reuse steps | Marketplace Actions (`uses:`) | Templates (`- template:`) or Tasks (`task:`) |
+| Secrets | `${{ secrets.MY_SECRET }}` | Pipeline variables (secret checkbox) or Key Vault |
+| Container registry | GHCR (`ghcr.io`) | ACR (`*.azurecr.io`) |
+| Auth to registry | `docker/login-action` + `GITHUB_TOKEN` | `Docker@2` + service connection (Azure AD) |
+| Deploy to K8s | `kubectl apply` (manual) | `KubernetesManifest@1` (managed task) |
+| Deploy gate | `if:` condition + repo variable | `environment:` with manual approval |
+| Test reporting | Third-party action | Built-in `PublishTestResults@2` + Tests tab |
+| Predefined vars | `${{ github.sha }}`, `${{ github.ref }}` | `$(Build.BuildId)`, `$(Build.SourceBranch)` |
+| Free tier (private) | 2,000 min/month | 1,800 min/month |
+
+---
+
+### How to Set Up Azure DevOps (Step-by-Step)
+
+> **Full guide**: [docs/AZURE_DEVOPS_SETUP.md](docs/AZURE_DEVOPS_SETUP.md)
+
+**Quick summary**:
+
+1. **Create org** → [dev.azure.com](https://dev.azure.com) → New organization → name it (e.g. `JaithraSarma`)
+2. **Create project** → `life-gamified` (set to **Public** for unlimited free CI minutes)
+3. **Connect GitHub** → Project Settings → Service connections → GitHub → authorize
+4. **Create CI pipeline** → Pipelines → New → GitHub → Existing YAML → `/azure-pipelines/ci-pipeline.yml` → Run
+5. **Create CD pipeline** → Pipelines → New → GitHub → Existing YAML → `/azure-pipelines/cd-pipeline.yml`
+6. **For CD to push images** → Create ACR + `acr-service-connection` (see [setup guide](docs/AZURE_DEVOPS_SETUP.md#4-create-the-cd-pipeline))
+7. **For CD to deploy** → Create K8s service connection (optional, for AKS or local cluster)
+
+**Prerequisites**:
+- The **CI pipeline works without any Azure subscription** — it just builds and tests on free Microsoft-hosted agents
+- The CD pipeline requires an **Azure subscription** (free trial $200 credit works) for ACR and AKS
+
+### Dual Pipeline Architecture
+
+Both pipeline systems coexist and trigger on the same Git events:
+
+```
+                    ┌─── .github/workflows/ci.yml ───────────────┐
+    Push to    ────►│  GitHub Actions CI                         │──► GHCR
+    main/develop    │  lint → test → build → docker → trivy      │
+                    └────────────────────────────────────────────┘
+                    ┌─── azure-pipelines/ci-pipeline.yml ────────┐
+    Push to    ────►│  Azure DevOps CI                           │──► (build only)
+    main/develop    │  lint → test → build → docker → trivy      │
+                    └────────────────────────────────────────────┘
+
+                    ┌─── .github/workflows/cd.yml ───────────────┐
+    Push to    ────►│  GitHub Actions CD                         │──► GHCR → K8s
+    main            │  build+push → deploy (gated)               │
+                    └────────────────────────────────────────────┘
+                    ┌─── azure-pipelines/cd-pipeline.yml ────────┐
+    Push to    ────►│  Azure DevOps CD                           │──► ACR → K8s
+    main            │  build+push → deploy (staged + approvals)  │
+                    └────────────────────────────────────────────┘
+```
 
 ---
 
