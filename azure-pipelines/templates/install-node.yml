@@ -1,0 +1,18 @@
+# ────────────────────────────────────────────────────────────────
+# Reusable template: Install Node.js
+# Usage in pipeline:
+#   - template: templates/install-node.yml
+#     parameters:
+#       nodeVersion: '20.x'
+# ────────────────────────────────────────────────────────────────
+
+parameters:
+  - name: nodeVersion
+    type: string
+    default: "20.x"
+
+steps:
+  - task: NodeTool@0
+    displayName: "Install Node.js ${{ parameters.nodeVersion }}"
+    inputs:
+      versionSpec: ${{ parameters.nodeVersion }}

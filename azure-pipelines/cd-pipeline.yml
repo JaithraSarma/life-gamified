@@ -1,0 +1,137 @@
+# ────────────────────────────────────────────────────────────────
+# Azure DevOps — CD Pipeline
+# Build, push to Azure Container Registry, deploy to Kubernetes
+# Mirrors the GitHub Actions CD workflow for dual-pipeline DevOps
+# ────────────────────────────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+      - main
+  tags:
+    include:
+      - "v*"
+
+pr: none
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  # ── Replace these with your ACR details ──
+  acrServiceConnection: "acr-service-connection"      # Azure DevOps service connection name
+  acrLoginServer: "lifegamifiedacr.azurecr.io"        # ACR login server
+  backendImageRepo: "life-gamified/backend"
+  frontendImageRepo: "life-gamified/frontend"
+  imageTag: "$(Build.BuildId)"
+  # ── Kubernetes ──
+  k8sServiceConnection: "k8s-service-connection"      # Azure DevOps K8s service connection
+  k8sNamespace: "life-gamified"
+
+stages:
+  # ── Stage 1: Build & Push to ACR ────────────────────────────
+  - stage: BuildAndPush
+    displayName: "Build & Push to ACR"
+    jobs:
+      - job: PushBackend
+        displayName: "Backend — Build & Push"
+        steps:
+          - task: Docker@2
+            displayName: "Login to ACR"
+            inputs:
+              command: login
+              containerRegistry: $(acrServiceConnection)
+
+          - task: Docker@2
+            displayName: "Build & push backend"
+            inputs:
+              command: buildAndPush
+              repository: $(backendImageRepo)
+              Dockerfile: backend/Dockerfile
+              buildContext: backend
+              containerRegistry: $(acrServiceConnection)
+              tags: |
+                $(imageTag)
+                latest
+
+      - job: PushFrontend
+        displayName: "Frontend — Build & Push"
+        steps:
+          - task: Docker@2
+            displayName: "Login to ACR"
+            inputs:
+              command: login
+              containerRegistry: $(acrServiceConnection)
+
+          - task: Docker@2
+            displayName: "Build & push frontend"
+            inputs:
+              command: buildAndPush
+              repository: $(frontendImageRepo)
+              Dockerfile: frontend/Dockerfile
+              buildContext: frontend
+              containerRegistry: $(acrServiceConnection)
+              tags: |
+                $(imageTag)
+                latest
+
+  # ── Stage 2: Deploy to Kubernetes ───────────────────────────
+  - stage: Deploy
+    displayName: "Deploy to Kubernetes"
+    dependsOn: BuildAndPush
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployToK8s
+        displayName: "Deploy to K8s Cluster"
+        environment: "life-gamified-production"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: KubernetesManifest@1
+                  displayName: "Create namespace"
+                  inputs:
+                    action: deploy
+                    connectionType: kubernetesServiceConnection
+                    kubernetesServiceConnection: $(k8sServiceConnection)
+                    namespace: $(k8sNamespace)
+                    manifests: k8s/namespace.yaml
+
+                - script: |
+                    sed -i "s|life-gamified-backend:latest|$(acrLoginServer)/$(backendImageRepo):$(imageTag)|g" k8s/backend-deployment.yaml
+                    sed -i "s|life-gamified-frontend:latest|$(acrLoginServer)/$(frontendImageRepo):$(imageTag)|g" k8s/frontend-deployment.yaml
+                    sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" k8s/backend-deployment.yaml
+                    sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" k8s/frontend-deployment.yaml
+                  displayName: "Update image tags in manifests"
+
+                - task: KubernetesManifest@1
+                  displayName: "Deploy all manifests"
+                  inputs:
+                    action: deploy
+                    connectionType: kubernetesServiceConnection
+                    kubernetesServiceConnection: $(k8sServiceConnection)
+                    namespace: $(k8sNamespace)
+                    manifests: |
+                      k8s/backend-deployment.yaml
+                      k8s/frontend-deployment.yaml
+                      k8s/ingress.yaml
+
+                - task: Kubernetes@1
+                  displayName: "Verify rollout — backend"
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceConnection: $(k8sServiceConnection)
+                    namespace: $(k8sNamespace)
+                    command: rollout
+                    arguments: "status deployment/backend --timeout=120s"
+
+                - task: Kubernetes@1
+                  displayName: "Verify rollout — frontend"
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceConnection: $(k8sServiceConnection)
+                    namespace: $(k8sNamespace)
+                    command: rollout
+                    arguments: "status deployment/frontend --timeout=120s"

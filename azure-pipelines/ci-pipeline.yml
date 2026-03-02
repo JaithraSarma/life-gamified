@@ -1,0 +1,137 @@
+# ────────────────────────────────────────────────────────────────
+# Azure DevOps — CI Pipeline
+# Mirrors the GitHub Actions CI workflow for dual-pipeline DevOps
+# ────────────────────────────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  nodeVersion: "20.x"
+
+stages:
+  # ── Stage 1: Build & Test ───────────────────────────────────
+  - stage: BuildAndTest
+    displayName: "Build & Test"
+    jobs:
+      # ── Backend: Lint, Test, Build ──
+      - job: Backend
+        displayName: "Backend — Lint, Test & Build"
+        steps:
+          - task: NodeTool@0
+            displayName: "Install Node.js $(nodeVersion)"
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: |
+              cd backend
+              npm ci
+            displayName: "Backend — Install dependencies"
+
+          - script: |
+              cd backend
+              npm run lint || true
+            displayName: "Backend — Lint (non-blocking)"
+
+          - script: |
+              cd backend
+              npm test
+            displayName: "Backend — Run tests (8 tests)"
+
+          - script: |
+              cd backend
+              npm run build
+            displayName: "Backend — TypeScript build"
+
+          - task: PublishTestResults@2
+            displayName: "Publish test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "backend/test-results/*.xml"
+              failTaskOnFailedTests: true
+              failTaskOnMissingResultsFile: false
+
+      # ── Frontend: Lint & Build ──
+      - job: Frontend
+        displayName: "Frontend — Lint & Build"
+        steps:
+          - task: NodeTool@0
+            displayName: "Install Node.js $(nodeVersion)"
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: |
+              cd frontend
+              npm ci
+            displayName: "Frontend — Install dependencies"
+
+          - script: |
+              cd frontend
+              npm run lint || true
+            displayName: "Frontend — Lint (non-blocking)"
+
+          - script: |
+              cd frontend
+              npm run build
+            displayName: "Frontend — Production build"
+
+  # ── Stage 2: Docker Build ───────────────────────────────────
+  - stage: DockerBuild
+    displayName: "Docker Build"
+    dependsOn: BuildAndTest
+    jobs:
+      - job: BuildImages
+        displayName: "Build Docker Images"
+        steps:
+          - task: Docker@2
+            displayName: "Build backend image"
+            inputs:
+              command: build
+              Dockerfile: backend/Dockerfile
+              buildContext: backend
+              tags: |
+                $(Build.BuildId)
+                latest
+
+          - task: Docker@2
+            displayName: "Build frontend image"
+            inputs:
+              command: build
+              Dockerfile: frontend/Dockerfile
+              buildContext: frontend
+              tags: |
+                $(Build.BuildId)
+                latest
+
+  # ── Stage 3: Security Scan ─────────────────────────────────
+  - stage: SecurityScan
+    displayName: "Security Scan"
+    dependsOn: BuildAndTest
+    jobs:
+      - job: TrivyScan
+        displayName: "Trivy Vulnerability Scan"
+        steps:
+          - script: |
+              sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+              wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+              echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+              sudo apt-get update
+              sudo apt-get install -y trivy
+            displayName: "Install Trivy"
+
+          - script: |
+              trivy fs --severity HIGH,CRITICAL --exit-code 0 ./backend
+              trivy fs --severity HIGH,CRITICAL --exit-code 0 ./frontend
+            displayName: "Scan backend & frontend"

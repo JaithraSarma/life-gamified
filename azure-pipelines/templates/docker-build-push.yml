@@ -1,0 +1,45 @@
+# ────────────────────────────────────────────────────────────────
+# Reusable template: Docker Build & Push to ACR
+# Usage in pipeline:
+#   - template: templates/docker-build-push.yml
+#     parameters:
+#       serviceName: 'backend'
+#       dockerfilePath: 'backend/Dockerfile'
+#       buildContext: 'backend'
+#       repository: 'life-gamified/backend'
+#       containerRegistry: 'acr-service-connection'
+# ────────────────────────────────────────────────────────────────
+
+parameters:
+  - name: serviceName
+    type: string
+  - name: dockerfilePath
+    type: string
+  - name: buildContext
+    type: string
+  - name: repository
+    type: string
+  - name: containerRegistry
+    type: string
+  - name: imageTag
+    type: string
+    default: "$(Build.BuildId)"
+
+steps:
+  - task: Docker@2
+    displayName: "Login to ACR (${{ parameters.serviceName }})"
+    inputs:
+      command: login
+      containerRegistry: ${{ parameters.containerRegistry }}
+
+  - task: Docker@2
+    displayName: "Build & push ${{ parameters.serviceName }}"
+    inputs:
+      command: buildAndPush
+      repository: ${{ parameters.repository }}
+      Dockerfile: ${{ parameters.dockerfilePath }}
+      buildContext: ${{ parameters.buildContext }}
+      containerRegistry: ${{ parameters.containerRegistry }}
+      tags: |
+        ${{ parameters.imageTag }}
+        latest

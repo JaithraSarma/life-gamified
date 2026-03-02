@@ -11,6 +11,7 @@
 ![Terraform](https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white)
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white)
+![Azure DevOps](https://img.shields.io/badge/Azure_DevOps-0078D7?logo=azuredevops&logoColor=white)
 
 ---
 
@@ -31,10 +32,11 @@
 13. [Kubernetes (K8s)](#kubernetes-k8s)
 14. [Terraform — Infrastructure as Code](#terraform--infrastructure-as-code)
 15. [CI/CD — GitHub Actions](#cicd--github-actions)
-16. [How to Run Everything](#how-to-run-everything)
-17. [Scripts & Utilities](#scripts--utilities)
-18. [Testing](#testing)
-19. [Troubleshooting](#troubleshooting)
+16. [CI/CD — Azure DevOps](#cicd--azure-devops)
+17. [How to Run Everything](#how-to-run-everything)
+18. [Scripts & Utilities](#scripts--utilities)
+19. [Testing](#testing)
+20. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -48,7 +50,7 @@
 - **Streak Timer**: A countdown clock that ticks down to your streak deadline, with a browser notification 30 minutes before deadline if you haven't met your goal yet.
 - **Power-Up Shop**: Spend gems to buy Streak Freezes that protect your streak on off days.
 
-The project isn't just the app — it includes a **complete production-grade DevOps pipeline**: Docker multi-stage builds, Kubernetes deployments, Terraform infrastructure-as-code, CI/CD pipelines with GitHub Actions, and a Prometheus + Grafana monitoring stack with 14 custom dashboard panels.
+The project isn't just the app — it includes a **complete production-grade DevOps pipeline**: Docker multi-stage builds, Kubernetes deployments, Terraform infrastructure-as-code, **dual CI/CD pipelines with both GitHub Actions and Azure DevOps**, and a Prometheus + Grafana monitoring stack with 14 custom dashboard panels.
 
 ---
 
@@ -103,8 +105,8 @@ You cannot nest a subtask under another subtask — the backend enforces `parent
 | **Orchestration** | Docker Compose             | One command to spin up 4 services (backend, frontend, Prometheus, Grafana).           |
 | **K8s**       | Kubernetes (Docker Desktop)    | Practice production-grade orchestration: replicas, PVC, Ingress, liveness probes.     |
 | **IaC**       | Terraform + Docker Provider    | Declarative infra — `plan → apply → destroy` lifecycle for containers.                |
-| **CI**        | GitHub Actions                 | Native GitHub integration: lint, test, build, Docker build, Trivy security scan.      |
-| **CD**        | GitHub Actions + GHCR          | Push images to GitHub Container Registry, deploy to K8s (gated by `DEPLOY_ENABLED`). |
+| **CI**        | GitHub Actions + Azure DevOps  | Dual-platform CI: lint, test, build, Docker build, Trivy security scan on both.       |
+| **CD**        | GHCR + Azure Container Registry| Push images to GHCR (GitHub) and ACR (Azure), deploy to K8s (gated).                 |
 | **Monitoring**| Prometheus v3.3.0              | Pull-based metrics scraping every 15s, PromQL query language.                         |
 | **Dashboards**| Grafana v11.6.0                | 14-panel provisioned dashboard, auto-configured datasource, zero manual setup.        |
 
@@ -196,11 +198,19 @@ Life Gamified/
 │       ├── main.tf                     ← Docker provider: network, images, containers, volume
 │       └── variables.tf                ← Configurable: docker_host, ports, environment
 │
-├── ─── CI/CD ────────────────────────────────────────────────
+├── ─── CI/CD (GitHub Actions) ───────────────────────────────
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml                      ← CI: lint → test → build → docker build → Trivy scan
 │       └── cd.yml                      ← CD: build+push to GHCR → deploy to K8s (gated)
+│
+├── ─── CI/CD (Azure DevOps) ────────────────────────────────
+├── azure-pipelines/
+│   ├── ci-pipeline.yml                 ← CI: lint → test → build → docker build → Trivy scan
+│   ├── cd-pipeline.yml                 ← CD: build+push to ACR → deploy to K8s (staged)
+│   └── templates/
+│       ├── install-node.yml            ← Reusable template: Node.js setup
+│       └── docker-build-push.yml       ← Reusable template: Docker build + ACR push
 │
 ├── ─── SCRIPTS ──────────────────────────────────────────────
 ├── scripts/
@@ -1392,6 +1402,99 @@ terraform destroy    # Tear down everything (type "yes")
 2. The GitHub repository variable `DEPLOY_ENABLED` is set to `'true'`
 
 This prevents accidental deployments. For local practice, the deploy step is effectively a no-op since `DEPLOY_ENABLED` isn't set.
+
+---
+
+## CI/CD — Azure DevOps
+
+The project includes a **parallel Azure DevOps pipeline** alongside GitHub Actions, demonstrating multi-platform CI/CD.
+
+### Pipeline Files
+
+```
+azure-pipelines/
+├── ci-pipeline.yml              # CI: lint → test → build → Docker build → Trivy scan
+├── cd-pipeline.yml              # CD: build & push to ACR → deploy to K8s (staged)
+└── templates/
+    ├── install-node.yml         # Reusable: Node.js setup
+    └── docker-build-push.yml   # Reusable: Docker build + ACR push
+```
+
+### CI Pipeline (`azure-pipelines/ci-pipeline.yml`)
+
+**Triggers**: Push to `main`/`develop`, pull requests to `main`.
+
+```
+┌──────────────────────────────────────┐
+│  Stage: BuildAndTest                 │
+│  ├── Job: Backend                    │
+│  │   ├── npm ci                      │
+│  │   ├── npm run lint (non-blocking) │
+│  │   ├── npm test (8 tests)          │
+│  │   └── npm run build               │
+│  └── Job: Frontend                   │
+│      ├── npm ci                      │
+│      ├── npm run lint (non-blocking) │
+│      └── npm run build               │
+└──────────────┬───────────────────────┘
+               │
+┌──────────────▼───────────────────────┐
+│  Stage: DockerBuild                  │
+│  ├── docker build backend            │
+│  └── docker build frontend           │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│  Stage: SecurityScan (parallel)      │
+│  ├── Install Trivy                   │
+│  ├── Scan backend (HIGH,CRITICAL)    │
+│  └── Scan frontend (HIGH,CRITICAL)   │
+└──────────────────────────────────────┘
+```
+
+### CD Pipeline (`azure-pipelines/cd-pipeline.yml`)
+
+**Triggers**: Push to `main`, version tags (`v*`).
+
+```
+┌──────────────────────────────────────┐
+│  Stage: BuildAndPush                 │
+│  ├── Job: PushBackend                │
+│  │   └── Build + push to ACR        │
+│  └── Job: PushFrontend               │
+│      └── Build + push to ACR        │
+└──────────────┬───────────────────────┘
+               │
+               │ condition: main branch only
+               ▼
+┌──────────────────────────────────────┐
+│  Stage: Deploy                       │
+│  ├── Create namespace                │
+│  ├── sed: replace image tags         │
+│  ├── KubernetesManifest@1 deploy     │
+│  ├── Verify rollout — backend        │
+│  └── Verify rollout — frontend       │
+└──────────────────────────────────────┘
+```
+
+**ACR (Azure Container Registry)**: Images are pushed to `lifegamifiedacr.azurecr.io/life-gamified/backend` and `.../frontend` with build ID tags.
+
+**Environment approvals**: The deploy stage uses Azure DevOps `environment` resources, enabling manual approval gates before production deploys.
+
+### Dual Pipeline Comparison
+
+| Feature              | GitHub Actions           | Azure DevOps             |
+|----------------------|--------------------------|--------------------------|
+| Config location      | `.github/workflows/`     | `azure-pipelines/`       |
+| Container registry   | GHCR                     | Azure Container Registry |
+| Trigger syntax       | `on: push/pr`            | `trigger/pr`             |
+| Pipeline language    | GitHub Actions YAML      | Azure Pipelines YAML     |
+| Deploy mechanism     | `kubectl apply`          | `KubernetesManifest@1`   |
+| Deploy guard         | `vars.DEPLOY_ENABLED`    | Environment approvals    |
+| Reusable components  | N/A                      | `templates/` (2 templates) |
+| Free tier            | 2,000 min/month          | 1,800 min/month          |
+
+> **Full setup guide**: See [docs/AZURE_DEVOPS_SETUP.md](docs/AZURE_DEVOPS_SETUP.md) for step-by-step instructions on creating the Azure DevOps organization, connecting your repo, and configuring service connections.
 
 ---
 
