@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: life-gamified
+  labels:
+    app.kubernetes.io/name: life-gamified
+    app.kubernetes.io/part-of: life-gamified
