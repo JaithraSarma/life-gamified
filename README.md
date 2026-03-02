@@ -1407,7 +1407,9 @@ This prevents accidental deployments. For local practice, the deploy step is eff
 
 ## CI/CD — Azure DevOps
 
-The project includes a **parallel Azure DevOps pipeline** alongside GitHub Actions, demonstrating multi-platform CI/CD.
+The project includes a **parallel Azure DevOps pipeline** alongside GitHub Actions, demonstrating multi-platform CI/CD expertise.
+
+> **Note**: The CI pipeline is **completely free** (no Azure subscription needed — only an Azure DevOps account at [dev.azure.com](https://dev.azure.com)). The CD pipeline requires an Azure subscription (free trial $200 credit works) for Azure Container Registry.
 
 ### Pipeline Files
 
@@ -1506,6 +1508,7 @@ azure-pipelines/
 - **Docker Desktop** (with Kubernetes enabled for K8s)
 - **Terraform** (for IaC)
 - **Git** and **gh** CLI (for GitHub push)
+- **Azure DevOps account** (optional, for Azure Pipelines — see [setup guide](docs/AZURE_DEVOPS_SETUP.md))
 
 ### 1. Local Development (Fastest)
 
