@@ -2,12 +2,38 @@ import { Router, Request, Response } from "express";
 import { getDb } from "../database";
 import { v4 as uuidv4 } from "uuid";
 import type { Task } from "../types";
+import {
+  activeTasksGauge,
+  activeSubtasksGauge,
+  tasksCompletedTotal,
+  gemsGauge,
+  streakGauge,
+  todayCompletedGauge,
+} from "../metrics";
 
 const router = Router();
 
 // ── Helper: today's date string ─────────────────────────
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Re-sync all Prometheus gauges from DB (called after mutations) */
+function refreshGauges(): void {
+  const db = getDb();
+  const mainCount = (db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE completed = 0 AND parent_id IS NULL`).get() as any).c;
+  const subCount  = (db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE completed = 0 AND parent_id IS NOT NULL`).get() as any).c;
+  const stats     = db.prepare(`SELECT * FROM user_stats WHERE id = 1`).get() as any;
+  const today     = todayStr();
+
+  db.prepare(`INSERT OR IGNORE INTO daily_records (date, tasks_completed, goal_met) VALUES (?, 0, 0)`).run(today);
+  const daily = db.prepare(`SELECT tasks_completed FROM daily_records WHERE date = ?`).get(today) as any;
+
+  activeTasksGauge.set(mainCount);
+  activeSubtasksGauge.set(subCount);
+  gemsGauge.set(stats.gems);
+  streakGauge.set(stats.current_streak);
+  todayCompletedGauge.set(daily.tasks_completed);
 }
 
 // ── GET /api/tasks — list all tasks grouped by parent ───
@@ -55,6 +81,7 @@ router.post("/", (req: Request, res: Response) => {
   db.prepare(`INSERT INTO tasks (id, title, parent_id) VALUES (?, ?, ?)`).run(id, title.trim(), parent_id || null);
 
   const task = db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as Task;
+  refreshGauges();
   res.status(201).json({ ...task, completed: !!task.completed });
 });
 
@@ -135,7 +162,12 @@ router.patch("/:id", (req: Request, res: Response) => {
     }
   }
 
+  if (newCompleted) {
+    tasksCompletedTotal.inc();
+  }
+
   const updated = db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(task.id) as Task;
+  refreshGauges();
   res.json({ ...updated, completed: !!updated.completed });
 });
 
@@ -153,6 +185,7 @@ router.delete("/:id", (req: Request, res: Response) => {
   db.prepare(`DELETE FROM tasks WHERE parent_id = ?`).run(task.id);
   db.prepare(`DELETE FROM tasks WHERE id = ?`).run(task.id);
 
+  refreshGauges();
   res.status(204).send();
 });
 

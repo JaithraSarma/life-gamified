@@ -5,6 +5,7 @@ import statsRoutes from "./routes/stats";
 import settingsRoutes from "./routes/settings";
 import powerupRoutes from "./routes/powerups";
 import { getDb, closeDb } from "./database";
+import { metricsMiddleware, register } from "./metrics";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -12,6 +13,7 @@ const PORT = Number(process.env.PORT) || 3001;
 // ── Middleware ───────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
+app.use(metricsMiddleware);   // Instrument every HTTP request
 
 // ── Health check ────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
@@ -20,6 +22,16 @@ app.get("/api/health", (_req, res) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   } catch {
     res.status(503).json({ status: "unhealthy" });
+  }
+});
+
+// ── Prometheus metrics endpoint ─────────────────────────
+app.get("/api/metrics", async (_req, res) => {
+  try {
+    res.set("Content-Type", register.contentType);
+    res.end(await register.metrics());
+  } catch {
+    res.status(500).end();
   }
 });
 

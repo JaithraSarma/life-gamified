@@ -4,7 +4,7 @@ global:
 
 scrape_configs:
   - job_name: "life-gamified-backend"
-    metrics_path: /api/health
+    metrics_path: /api/metrics
     static_configs:
       - targets: ["backend:3001"]
         labels:

@@ -4,53 +4,361 @@
     "uid": "life-gamified",
     "title": "Life Gamified — Application Dashboard",
     "timezone": "browser",
+    "editable": true,
+    "templating": { "list": [] },
+    "annotations": { "list": [] },
     "panels": [
       {
         "id": 1,
-        "title": "Backend Health",
+        "title": "Backend Up / Down",
         "type": "stat",
-        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
         "targets": [
           {
             "expr": "up{job=\"life-gamified-backend\"}",
-            "legendFormat": "Backend Status"
+            "legendFormat": "Backend",
+            "refId": "A"
           }
         ],
         "fieldConfig": {
           "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "green", "value": 1 }
+              ]
+            },
             "mappings": [
-              { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+              {
+                "type": "value",
+                "options": {
+                  "0": { "text": "DOWN", "color": "red" },
+                  "1": { "text": "UP", "color": "green" }
+                }
+              }
             ]
           }
-        }
+        },
+        "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" }
       },
       {
         "id": 2,
-        "title": "Response Time (Health Endpoint)",
+        "title": "Gem Balance",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+        "targets": [
+          {
+            "expr": "app_gems_balance",
+            "legendFormat": "Gems",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "orange", "value": null },
+                { "color": "green", "value": 50 }
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+      },
+      {
+        "id": 3,
+        "title": "Current Streak",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+        "targets": [
+          {
+            "expr": "app_current_streak",
+            "legendFormat": "Streak",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "yellow", "value": null },
+                { "color": "green", "value": 3 },
+                { "color": "blue", "value": 7 }
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+      },
+      {
+        "id": 4,
+        "title": "Active Tasks",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "app_active_tasks",
+            "legendFormat": "Tasks",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 10 },
+                { "color": "red", "value": 20 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+      },
+      {
+        "id": 5,
+        "title": "Active Subtasks",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+        "targets": [
+          {
+            "expr": "app_active_subtasks",
+            "legendFormat": "Subtasks",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 10 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+      },
+      {
+        "id": 6,
+        "title": "Today Completed",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+        "targets": [
+          {
+            "expr": "app_today_completed",
+            "legendFormat": "Done Today",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "green", "value": 5 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area", "textMode": "value" }
+      },
+      {
+        "id": 7,
+        "title": "HTTP Request Rate (req/s)",
         "type": "timeseries",
         "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
         "targets": [
           {
-            "expr": "scrape_duration_seconds{job=\"life-gamified-backend\"}",
-            "legendFormat": "Response Time"
+            "expr": "sum(rate(http_requests_total{job=\"life-gamified-backend\"}[1m])) by (route)",
+            "legendFormat": "{{ route }}",
+            "refId": "A"
           }
-        ]
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "pointSize": 5, "showPoints": "auto" }
+          }
+        },
+        "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
       },
       {
-        "id": 3,
-        "title": "Scrape Samples",
+        "id": 8,
+        "title": "HTTP Request Duration (p50 / p95 / p99)",
         "type": "timeseries",
         "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
         "targets": [
           {
-            "expr": "scrape_samples_scraped{job=\"life-gamified-backend\"}",
-            "legendFormat": "Samples"
+            "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"life-gamified-backend\"}[1m])) by (le))",
+            "legendFormat": "p50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"life-gamified-backend\"}[1m])) by (le))",
+            "legendFormat": "p95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"life-gamified-backend\"}[1m])) by (le))",
+            "legendFormat": "p99",
+            "refId": "C"
           }
-        ]
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+          }
+        },
+        "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+      },
+      {
+        "id": 9,
+        "title": "HTTP Responses by Status Code",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"life-gamified-backend\"}[1m])) by (status_code)",
+            "legendFormat": "{{ status_code }}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50, "stacking": { "mode": "normal" } }
+          },
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "200" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "201" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "204" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "400" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "404" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "500" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+          ]
+        },
+        "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+      },
+      {
+        "id": 10,
+        "title": "Tasks Completed (cumulative)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "expr": "app_tasks_completed_total",
+            "legendFormat": "Total Completed",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "gradientMode": "scheme" },
+            "color": { "mode": "fixed", "fixedColor": "green" }
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Gem Balance Over Time",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "app_gems_balance",
+            "legendFormat": "Gems",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 25, "gradientMode": "scheme" },
+            "color": { "mode": "fixed", "fixedColor": "orange" }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "title": "Node.js Heap Used (MB)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+        "targets": [
+          {
+            "expr": "app_nodejs_heap_size_used_bytes{job=\"life-gamified-backend\"} / 1024 / 1024",
+            "legendFormat": "Heap Used",
+            "refId": "A"
+          },
+          {
+            "expr": "app_nodejs_heap_size_total_bytes{job=\"life-gamified-backend\"} / 1024 / 1024",
+            "legendFormat": "Heap Total",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "decmbytes",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+          }
+        },
+        "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+      },
+      {
+        "id": 13,
+        "title": "Event Loop Lag (seconds)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+        "targets": [
+          {
+            "expr": "app_nodejs_eventloop_lag_seconds{job=\"life-gamified-backend\"}",
+            "legendFormat": "Event Loop Lag",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 },
+            "color": { "mode": "fixed", "fixedColor": "purple" }
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Active HTTP Connections",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+        "targets": [
+          {
+            "expr": "app_nodejs_active_connections_total{job=\"life-gamified-backend\"}",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 },
+            "color": { "mode": "fixed", "fixedColor": "blue" }
+          }
+        }
       }
     ],
-    "time": { "from": "now-1h", "to": "now" },
-    "refresh": "30s",
-    "version": 1
+    "time": { "from": "now-30m", "to": "now" },
+    "refresh": "10s",
+    "version": 1,
+    "schemaVersion": 39
   }
 }
