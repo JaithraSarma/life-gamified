@@ -1,5 +1,4 @@
 {
-  "dashboard": {
     "id": null,
     "uid": "life-gamified",
     "title": "Life Gamified — Application Dashboard",
@@ -360,5 +359,4 @@
     "refresh": "10s",
     "version": 1,
     "schemaVersion": 39
-  }
 }
