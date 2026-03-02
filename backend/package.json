@@ -1,0 +1,33 @@
+{
+  "name": "life-gamified-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Life Gamified — a gamified to-do app",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/ --ext .ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "*",
+    "cors": "*",
+    "express": "^4.21.0",
+    "uuid": "*"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "*",
+    "@types/cors": "*",
+    "@types/express": "*",
+    "@types/node": "*",
+    "@types/uuid": "*",
+    "@typescript-eslint/eslint-plugin": "*",
+    "@typescript-eslint/parser": "*",
+    "eslint": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
